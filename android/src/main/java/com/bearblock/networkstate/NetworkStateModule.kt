@@ -19,6 +19,15 @@ class NetworkStateModule(reactContext: ReactApplicationContext) :
     return NAME
   }
 
+  // Required for NativeEventEmitter on iOS/Android
+  override fun addListener(eventType: String) {
+    // Required for event emitter support - no-op on Android
+  }
+
+  override fun removeListeners(count: Double) {
+    // Required for event emitter support - no-op on Android
+  }
+
   override fun getNetworkState(promise: Promise) {
     scope.launch {
       try {
