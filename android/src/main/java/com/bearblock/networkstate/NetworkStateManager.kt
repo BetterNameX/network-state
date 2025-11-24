@@ -52,10 +52,14 @@ class NetworkStateManager(private val context: Context) {
     private fun updateNetworkState() {
         val (_, caps) = resolveActiveNetworkAndCaps()
 
+        // isConnected: Has network capabilities (might be captive portal)
+        // isInternetReachable: Network has been validated by Android (actual internet access)
+        val hasNetwork = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val isValidated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+
         val newState = NetworkState(
-            isConnected = caps != null,
-            isInternetReachable = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-                    || caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true,
+            isConnected = hasNetwork,
+            isInternetReachable = isValidated,
             type = getNetworkType(caps),
             isExpensive = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) != true,
             isMetered = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) != true,

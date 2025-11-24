@@ -1,14 +1,36 @@
 import { TurboModuleRegistry, type TurboModule } from 'react-native';
 
 /**
+ * Network state information
  * Platform: Android & iOS
  */
 export interface NetworkState {
+  /**
+   * Whether a network interface is available and claims to provide internet access.
+   * This will be true even if you're connected to a captive portal (e.g., hotel WiFi login page).
+   * Use this to determine if the device has any network connectivity at all.
+   */
   isConnected: boolean;
+
+  /**
+   * Whether the device can actually reach the internet.
+   * On Android: Network has been validated by the OS (NET_CAPABILITY_VALIDATED).
+   * On iOS: Network path is satisfied (not just reachable, but usable).
+   * This will be false at captive portals or when network requires authentication.
+   * Use this to determine if you can make network requests.
+   */
   isInternetReachable: boolean;
+
+  /** Network type (wifi, cellular, ethernet, etc.) */
   type: NetworkType;
+
+  /** Whether the network is considered expensive (typically true on cellular) */
   isExpensive: boolean;
+
+  /** Whether the network is metered (typically true on cellular) */
   isMetered: boolean;
+
+  /** Additional network details (signal strength, capabilities, etc.) */
   details?: NetworkDetails;
 }
 

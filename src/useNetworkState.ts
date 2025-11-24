@@ -79,7 +79,9 @@ export interface UseNetworkStateReturn {
   isConnectedToCellular: () => Promise<boolean>;
 
   /**
-   * Check if internet is reachable
+   * Check if internet is actually reachable (not just connected to a network).
+   * Returns true only if the OS has validated internet connectivity.
+   * Returns false at captive portals or when network requires authentication.
    */
   isInternetReachable: () => Promise<boolean>;
 
@@ -107,7 +109,16 @@ export interface UseNetworkStateReturn {
  * useEffect(() => {
  *   if (networkState) {
  *     console.log('Network type:', networkState.type);
- *     console.log('Is connected:', networkState.isConnected);
+ *
+ *     // isConnected: true if device has a network (might be captive portal)
+ *     console.log('Has network:', networkState.isConnected);
+ *
+ *     // isInternetReachable: true only if internet actually works
+ *     console.log('Can reach internet:', networkState.isInternetReachable);
+ *
+ *     if (networkState.isConnected && !networkState.isInternetReachable) {
+ *       console.log('Connected to network but may need authentication (captive portal)');
+ *     }
  *   }
  * }, [networkState]);
  * ```

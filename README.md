@@ -70,6 +70,11 @@ function MyComponent() {
       console.log('Network type:', networkState.type);
       console.log('Is connected:', networkState.isConnected);
       console.log('Internet reachable:', networkState.isInternetReachable);
+      
+      // Handle different connection states
+      if (networkState.isConnected && !networkState.isInternetReachable) {
+        console.log('Connected to network but may need authentication (captive portal)');
+      }
     }
   }, [networkState]);
 
@@ -77,10 +82,63 @@ function MyComponent() {
     <View>
       <Text>Network: {networkState?.type || 'Unknown'}</Text>
       <Text>Connected: {networkState?.isConnected ? 'Yes' : 'No'}</Text>
+      <Text>Internet: {networkState?.isInternetReachable ? 'Yes' : 'No'}</Text>
       <Button title="Start Listening" onPress={startListening} />
       <Button title="Stop Listening" onPress={stopListening} />
     </View>
   );
+}
+```
+
+### Understanding `isConnected` vs `isInternetReachable`
+
+These two properties provide different levels of network connectivity information:
+
+#### `isConnected`
+- **Meaning**: Device has a network interface and it claims to provide internet access
+- **True when**: Connected to WiFi/Cellular/Ethernet, even if it's a captive portal
+- **Use case**: Check if device has any network connectivity at all
+- **Example scenarios where it's `true`**:
+  - Hotel WiFi with login page (captive portal)
+  - Airport WiFi before accepting terms
+  - Corporate network requiring VPN
+  - Home WiFi with working internet
+
+#### `isInternetReachable`
+- **Meaning**: Device can actually reach the public internet
+- **True when**: OS has validated that internet requests can succeed
+- **Use case**: Check if you can make API calls or load remote content
+- **Example scenarios where it's `true`**:
+  - Connected to WiFi/Cellular with verified internet access
+  - VPN connected and authenticated
+- **Example scenarios where it's `false`**:
+  - Captive portals (hotel/airport WiFi login pages)
+  - Network requiring authentication
+  - WiFi connected but no internet gateway
+
+#### Typical Patterns
+
+```typescript
+const { networkState } = useNetworkState();
+
+// Pattern 1: Show offline UI
+if (!networkState?.isConnected) {
+  return <Text>No network connection</Text>;
+}
+
+// Pattern 2: Show "needs authentication" UI
+if (networkState.isConnected && !networkState.isInternetReachable) {
+  return <Text>Connected but internet not reachable. Check for captive portal.</Text>;
+}
+
+// Pattern 3: Safe to make network requests
+if (networkState.isInternetReachable) {
+  // Make API calls, load images, etc.
+}
+
+// Pattern 4: Warn about expensive connection
+if (networkState.isInternetReachable && networkState.isExpensive) {
+  return <Text>Using cellular data - large downloads may incur charges</Text>;
 }
 ```
 
@@ -178,8 +236,18 @@ const {
 
 ```typescript
 interface NetworkState {
+  // Whether a network interface is available and claims to provide internet access.
+  // This will be true even if you're connected to a captive portal (e.g., hotel WiFi login page).
+  // Use this to determine if the device has any network connectivity at all.
   isConnected: boolean;
+  
+  // Whether the device can actually reach the internet.
+  // Android: Network has been validated by the OS (NET_CAPABILITY_VALIDATED).
+  // iOS: Network path is satisfied (not just reachable, but usable).
+  // This will be false at captive portals or when network requires authentication.
+  // Use this to determine if you can make network requests.
   isInternetReachable: boolean;
+  
   type: NetworkType;
   isExpensive: boolean;
   isMetered: boolean;
@@ -214,17 +282,22 @@ enum NetworkType {
 
 ### Platform Support by API
 
-- useNetworkState hook: Android & iOS
-- getNetworkState(): Android & iOS
-- start/stop listening: Android & iOS
-- isNetworkTypeAvailable(): Android & iOS (types available differ per platform)
-- getNetworkStrength(): Android (iOS returns -1)
-- isNetworkExpensive(): Android & iOS (treated as true on cellular)
-- isNetworkMetered(): Android & iOS (treated as true on cellular)
-- isConnectedToWifi()/isConnectedToCellular(): Android & iOS
-- isInternetReachable(): Android & iOS
-- getWifiDetails(): Android (may be null on iOS)
-- getNetworkCapabilities(): Android & iOS (fields coverage varies)
+- **useNetworkState hook**: Android & iOS
+- **getNetworkState()**: Android & iOS
+- **start/stop listening**: Android & iOS
+- **isConnected**: Android & iOS
+  - Android: Has `NET_CAPABILITY_INTERNET` (network claims internet access)
+  - iOS: Has network interfaces (WiFi/Cellular/Ethernet/Other)
+- **isInternetReachable**: Android & iOS
+  - Android: Has `NET_CAPABILITY_VALIDATED` (OS validated internet connectivity)
+  - iOS: Path status is `satisfied` (OS verified path is usable)
+- **isNetworkTypeAvailable()**: Android & iOS (types available differ per platform)
+- **getNetworkStrength()**: Android (iOS returns -1)
+- **isNetworkExpensive()**: Android & iOS (treated as true on cellular)
+- **isNetworkMetered()**: Android & iOS (treated as true on cellular)
+- **isConnectedToWifi()/isConnectedToCellular()**: Android & iOS
+- **getWifiDetails()**: Android (may be null on iOS)
+- **getNetworkCapabilities()**: Android & iOS (fields coverage varies)
 
 ## 🧪 Example
 
@@ -263,17 +336,23 @@ const { networkState, isListening } = useNetworkState({ autoStart: true });
 
 1. **Network Capabilities API**: Uses `NetworkCapabilities` to detect network type and capabilities
 2. **Network Callbacks**: Implements `ConnectivityManager.NetworkCallback` for real-time updates
-3. **Modern Permissions**: Handles Android 10+ permission requirements properly
-4. **Efficient Monitoring**: Only listens when needed and provides accurate state information
-5. **App Lifecycle**: Handles background/foreground transitions with automatic state refresh
+3. **Connection States**: 
+   - `isConnected`: Checks `NET_CAPABILITY_INTERNET` (network claims internet)
+   - `isInternetReachable`: Checks `NET_CAPABILITY_VALIDATED` (OS validated connectivity)
+4. **Modern Permissions**: Handles Android 10+ permission requirements properly
+5. **Efficient Monitoring**: Only listens when needed and provides accurate state information
+6. **App Lifecycle**: Handles background/foreground transitions with automatic state refresh
 
 ### iOS Implementation (Summary)
 
 1. **NWPathMonitor**: Uses `NWPathMonitor` for real-time network state monitoring
 2. **Network Framework**: Leverages iOS 12+ Network framework for reliable detection
 3. **Interface Detection**: Detects WiFi, Cellular, Ethernet, and other interface types
-4. **Event Emission**: Emits network state changes to React Native via events
-5. **App Lifecycle**: Handles background/foreground transitions with automatic state refresh
+4. **Connection States**:
+   - `isConnected`: Checks for network interfaces (WiFi/Cellular/Ethernet/Other)
+   - `isInternetReachable`: Checks `nw_path_status_satisfied` (OS validated path)
+5. **Event Emission**: Emits network state changes to React Native via events
+6. **App Lifecycle**: Handles background/foreground transitions with automatic state refresh
 
 ## 🤝 Contributing
 PRs welcome.

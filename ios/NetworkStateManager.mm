@@ -82,15 +82,20 @@
 }
 
 - (void)updateFromReachability:(SCNetworkReachabilityFlags)flags {
-    _isConnected = (flags & kSCNetworkReachabilityFlagsReachable) != 0;
-    _isInternetReachable = (flags & kSCNetworkReachabilityFlagsReachable) != 0;
+    // isConnected: Network is reachable (might require connection or be captive portal)
+    // isInternetReachable: Network is reachable AND doesn't require connection (actual internet)
+    BOOL isReachable = (flags & kSCNetworkReachabilityFlagsReachable) != 0;
+    BOOL needsConnection = (flags & kSCNetworkReachabilityFlagsConnectionRequired) != 0;
+    
+    _isConnected = isReachable;
+    _isInternetReachable = isReachable && !needsConnection;
     _isExpensive = (flags & kSCNetworkReachabilityFlagsIsWWAN) != 0;
     _isMetered = (flags & kSCNetworkReachabilityFlagsIsWWAN) != 0;
     
     // Determine network type
     if ((flags & kSCNetworkReachabilityFlagsIsWWAN) != 0) {
         _type = @"cellular";
-    } else if ((flags & kSCNetworkReachabilityFlagsReachable) != 0) {
+    } else if (isReachable) {
         _type = @"wifi";
     } else {
         _type = @"unknown";
@@ -171,7 +176,10 @@
         BOOL usesEthernet = nw_path_uses_interface_type(path, nw_interface_type_wired);
         BOOL usesOther = nw_path_uses_interface_type(path, nw_interface_type_other);
 
-        _currentNetworkState.isConnected = isSatisfied;
+        // isConnected: Has network interfaces (might be captive portal)
+        // isInternetReachable: Path is satisfied (validated by iOS)
+        BOOL hasNetworkInterface = usesWifi || usesCell || usesEthernet || usesOther;
+        _currentNetworkState.isConnected = hasNetworkInterface;
         _currentNetworkState.isInternetReachable = isSatisfied;
         _currentNetworkState.isExpensive = usesCell;
         _currentNetworkState.isMetered = usesCell;

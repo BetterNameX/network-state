@@ -87,7 +87,12 @@ export class ModernNetworkState {
     return state.type === NetworkType.CELLULAR && state.isConnected;
   }
 
-  /** Check if internet is reachable (Android & iOS) */
+  /**
+   * Check if internet is actually reachable (not just connected to a network).
+   * Returns true only if the OS has validated internet connectivity.
+   * Returns false at captive portals or when network requires authentication.
+   * (Android & iOS)
+   */
   async isInternetReachable(): Promise<boolean> {
     const state = await this.getNetworkState();
     return state.isInternetReachable;
