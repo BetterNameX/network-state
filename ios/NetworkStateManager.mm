@@ -1,5 +1,6 @@
 #import "NetworkStateManager.h"
 #import <Network/Network.h>
+#import <NetworkExtension/NetworkExtension.h>
 
 /**
  * Lightweight capability model attached to NetworkStateModel
@@ -39,13 +40,17 @@
 @end
 
 /**
- * Network details (strength/frequency/linkSpeed).
- * iOS does not expose these via public APIs; keep placeholders.
+ * Network details (ssid/bssid/strength/frequency/linkSpeed).
+ * SSID/BSSID require:
+ *   - com.apple.developer.networking.wifi-info entitlement
+ *   - Location permission (iOS 13+) or precise location (iOS 14+)
  */
 @implementation NetworkDetails
 
 - (instancetype)init {
     if (self = [super init]) {
+        _ssid = nil;
+        _bssid = nil;
         _strength = -1;
         _frequency = -1;
         _linkSpeed = -1;
@@ -56,8 +61,54 @@
 // No-op for NWPathMonitor-only implementation
 - (void)updateFromReachability:(int)unused {}
 
+/**
+ * Fetch WiFi SSID/BSSID using NEHotspotNetwork (iOS 14+).
+ * Fails gracefully if entitlements or permissions are missing.
+ * Requires:
+ *   - com.apple.developer.networking.wifi-info entitlement
+ *   - Location permission with precise location
+ */
+- (void)updateWifiInfo {
+    _ssid = nil;
+    _bssid = nil;
+    
+    if (@available(iOS 14.0, *)) {
+        @try {
+            dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+            __block NSString *fetchedSSID = nil;
+            __block NSString *fetchedBSSID = nil;
+            
+            [NEHotspotNetwork fetchCurrentWithCompletionHandler:^(NEHotspotNetwork * _Nullable currentNetwork) {
+                if (currentNetwork) {
+                    fetchedSSID = currentNetwork.SSID;
+                    fetchedBSSID = currentNetwork.BSSID;
+                }
+                dispatch_semaphore_signal(semaphore);
+            }];
+            
+            // Wait up to 1 second for the callback
+            dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC));
+            
+            _ssid = fetchedSSID;
+            _bssid = fetchedBSSID;
+        } @catch (NSException *exception) {
+            // Fail gracefully - entitlements or permissions may be missing
+            NSLog(@"NetworkDetails updateWifiInfo error: %@", exception.reason);
+            _ssid = nil;
+            _bssid = nil;
+        }
+    }
+}
+
 - (NSDictionary *)toDictionary {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    // Only include ssid/bssid if they have values (match Android behaviour)
+    if (_ssid != nil) {
+        result[@"ssid"] = _ssid;
+    }
+    if (_bssid != nil) {
+        result[@"bssid"] = _bssid;
+    }
     result[@"strength"] = @(_strength);
     result[@"frequency"] = @(_frequency);
     result[@"linkSpeed"] = @(_linkSpeed);
@@ -204,6 +255,15 @@
         [_currentNetworkState.capabilities setHasCapabilityInternet:isSatisfied];
         [_currentNetworkState.capabilities setHasCapabilityValidated:isSatisfied];
         [_currentNetworkState.capabilities setHasCapabilityCaptivePortal:NO];
+
+        // Fetch WiFi details (SSID/BSSID) only when connected to WiFi
+        if (usesWifi) {
+            [_currentNetworkState.details updateWifiInfo];
+        } else {
+            // Clear WiFi details when not on WiFi
+            _currentNetworkState.details.ssid = nil;
+            _currentNetworkState.details.bssid = nil;
+        }
 
         // Notify listeners
         if (_listeners) {

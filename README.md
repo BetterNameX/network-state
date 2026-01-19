@@ -42,6 +42,15 @@ Autolinking handles configuration.
 - ✅ Requires iOS 12.0+
 - ✅ Supports both Old Architecture and New Architecture (TurboModules/Fabric)
 
+##### WiFi SSID/BSSID (Optional)
+
+To access WiFi network name (SSID) and BSSID on iOS 14+, your app needs:
+
+1. **Entitlement**: Add `com.apple.developer.networking.wifi-info` to your app's entitlements file
+2. **Location permission**: Request location authorisation with **precise location** enabled
+
+Without these, `getWifiDetails()` will return `null` for SSID/BSSID on iOS (other fields like network type still work).
+
 ### Permissions
 
 #### Android (Auto-added)
@@ -54,6 +63,7 @@ Autolinking handles configuration.
 
 #### iOS (Auto-linked)
 - `Network.framework` - For NWPathMonitor and network state detection
+- `NetworkExtension.framework` - For WiFi SSID/BSSID access (iOS 14+)
 
 ## 📖 Usage
 
@@ -255,9 +265,9 @@ interface NetworkState {
 }
 
 interface NetworkDetails {
-  ssid?: string;            // WiFi network name (Android)
-  bssid?: string;           // WiFi BSSID (Android)
-  strength?: number;        // Signal strength (Android; iOS may be unavailable and return -1)
+  ssid?: string;            // WiFi network name (Android; iOS 14+ with entitlement + location)
+  bssid?: string;           // WiFi BSSID (Android; iOS 14+ with entitlement + location)
+  strength?: number;        // Signal strength (Android; iOS returns -1)
   frequency?: number;       // WiFi frequency in MHz (Android)
   linkSpeed?: number;       // WiFi link speed (Android)
   capabilities?: NetworkCapabilities; // Both; field coverage varies by platform
@@ -296,7 +306,7 @@ enum NetworkType {
 - **isNetworkExpensive()**: Android & iOS (treated as true on cellular)
 - **isNetworkMetered()**: Android & iOS (treated as true on cellular)
 - **isConnectedToWifi()/isConnectedToCellular()**: Android & iOS
-- **getWifiDetails()**: Android (may be null on iOS)
+- **getWifiDetails()**: Android & iOS 14+ (iOS requires entitlement + location permission; see iOS setup)
 - **getNetworkCapabilities()**: Android & iOS (fields coverage varies)
 
 ## 🧪 Example

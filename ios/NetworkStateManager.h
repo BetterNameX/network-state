@@ -23,12 +23,15 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 @interface NetworkDetails : NSObject
+@property (nonatomic, strong, nullable) NSString *ssid;
+@property (nonatomic, strong, nullable) NSString *bssid;
 @property (nonatomic, assign) NSInteger strength;
 @property (nonatomic, assign) NSInteger frequency;
 @property (nonatomic, assign) NSInteger linkSpeed;
 
 - (instancetype)init;
 - (void)updateFromReachability:(SCNetworkReachabilityFlags)flags;
+- (void)updateWifiInfo;
 - (NSDictionary *)toDictionary;
 @end
 
