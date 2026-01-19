@@ -31,7 +31,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)init;
 - (void)updateFromReachability:(SCNetworkReachabilityFlags)flags;
-- (void)updateWifiInfo;
+- (void)updateWifiInfoWithCompletion:(void (^)(void))completion;
 - (NSDictionary *)toDictionary;
 @end
 
@@ -62,6 +62,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)isNetworkExpensive;
 - (BOOL)isNetworkMetered;
 - (void)forceRefresh;
+- (void)refreshWifiInfoWithCompletion:(void (^)(void))completion;
 
 @end
 

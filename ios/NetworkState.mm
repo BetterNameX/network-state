@@ -69,9 +69,14 @@ RCT_EXPORT_METHOD(startNetworkStateListener) {
     if (!_isListening) {
         [_networkStateManager addListener:self];
         _isListening = YES;
-        // Emit current snapshot immediately upon starting
-        NetworkStateModel *snapshot = [self.networkStateManager getCurrentNetworkState];
-        [self sendNetworkStateEvent:snapshot];
+        // Refresh WiFi info first, then emit snapshot with complete data
+        __weak NetworkState *weakSelf = self;
+        [_networkStateManager refreshWifiInfoWithCompletion:^{
+            NetworkState *strongSelf = weakSelf;
+            if (!strongSelf) return;
+            NetworkStateModel *snapshot = [strongSelf.networkStateManager getCurrentNetworkState];
+            [strongSelf sendNetworkStateEvent:snapshot];
+        }];
     }
 }
 

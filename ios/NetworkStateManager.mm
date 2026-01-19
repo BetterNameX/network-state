@@ -64,39 +64,49 @@
 /**
  * Fetch WiFi SSID/BSSID using NEHotspotNetwork (iOS 14+).
  * Fails gracefully if entitlements or permissions are missing.
+ * Uses async completion handler to avoid deadlocks when called from main queue.
  * Requires:
  *   - com.apple.developer.networking.wifi-info entitlement
  *   - Location permission with precise location
  */
-- (void)updateWifiInfo {
+- (void)updateWifiInfoWithCompletion:(void (^)(void))completion {
     _ssid = nil;
     _bssid = nil;
     
     if (@available(iOS 14.0, *)) {
         @try {
-            dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
-            __block NSString *fetchedSSID = nil;
-            __block NSString *fetchedBSSID = nil;
-            
+            __weak NetworkDetails *weakSelf = self;
             [NEHotspotNetwork fetchCurrentWithCompletionHandler:^(NEHotspotNetwork * _Nullable currentNetwork) {
-                if (currentNetwork) {
-                    fetchedSSID = currentNetwork.SSID;
-                    fetchedBSSID = currentNetwork.BSSID;
+                NSLog(@"[NetworkState] NEHotspotNetwork result: %@, SSID: %@, BSSID: %@", 
+                      currentNetwork, currentNetwork.SSID, currentNetwork.BSSID);
+                
+                NetworkDetails *strongSelf = weakSelf;
+                if (!strongSelf) {
+                    if (completion) completion();
+                    return;
                 }
-                dispatch_semaphore_signal(semaphore);
+                
+                if (currentNetwork) {
+                    strongSelf.ssid = currentNetwork.SSID;
+                    strongSelf.bssid = currentNetwork.BSSID;
+                } else {
+                    strongSelf.ssid = nil;
+                    strongSelf.bssid = nil;
+                }
+                
+                if (completion) {
+                    completion();
+                }
             }];
-            
-            // Wait up to 1 second for the callback
-            dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC));
-            
-            _ssid = fetchedSSID;
-            _bssid = fetchedBSSID;
         } @catch (NSException *exception) {
             // Fail gracefully - entitlements or permissions may be missing
             NSLog(@"NetworkDetails updateWifiInfo error: %@", exception.reason);
             _ssid = nil;
             _bssid = nil;
+            if (completion) completion();
         }
+    } else {
+        if (completion) completion();
     }
 }
 
@@ -258,23 +268,36 @@
 
         // Fetch WiFi details (SSID/BSSID) only when connected to WiFi
         if (usesWifi) {
-            [_currentNetworkState.details updateWifiInfo];
+            __weak NetworkStateManager *weakSelf = self;
+            [_currentNetworkState.details updateWifiInfoWithCompletion:^{
+                NetworkStateManager *strongSelf = weakSelf;
+                if (!strongSelf) return;
+                
+                // Notify listeners on main queue after WiFi info is fetched
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [strongSelf notifyListeners];
+                });
+            }];
         } else {
             // Clear WiFi details when not on WiFi
             _currentNetworkState.details.ssid = nil;
             _currentNetworkState.details.bssid = nil;
-        }
-
-        // Notify listeners
-        if (_listeners) {
-            for (id<NetworkStateListener> listener in _listeners) {
-                if (listener && [listener respondsToSelector:@selector(onNetworkStateChanged:)]) {
-                    [listener onNetworkStateChanged:_currentNetworkState];
-                }
-            }
+            
+            // Notify listeners immediately when not on WiFi
+            [self notifyListeners];
         }
     } @catch (NSException *exception) {
         NSLog(@"NetworkStateManager updateNetworkStateFromPath error: %@", exception.reason);
+    }
+}
+
+- (void)notifyListeners {
+    if (_listeners) {
+        for (id<NetworkStateListener> listener in _listeners) {
+            if (listener && [listener respondsToSelector:@selector(onNetworkStateChanged:)]) {
+                [listener onNetworkStateChanged:_currentNetworkState];
+            }
+        }
     }
 }
 
@@ -327,6 +350,22 @@
         _pathMonitor = NULL;
     }
     [self setupReachability];
+}
+
+- (void)refreshWifiInfoWithCompletion:(void (^)(void))completion {
+    if (_currentNetworkState.capabilities.hasTransportWifi) {
+        [_currentNetworkState.details updateWifiInfoWithCompletion:^{
+            if (completion) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    completion();
+                });
+            }
+        }];
+    } else {
+        if (completion) {
+            completion();
+        }
+    }
 }
 
 @end
