@@ -240,7 +240,7 @@ export function useNetworkState(
     },
     getWifiDetails: async () => {
       const state = await NativeNetworkState.getNetworkState();
-      if (state.type === NetworkType.WIFI && state.details) {
+      if (state.details) {
         return state.details;
       }
       return null;
