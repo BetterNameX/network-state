@@ -77,9 +77,6 @@
         @try {
             __weak NetworkDetails *weakSelf = self;
             [NEHotspotNetwork fetchCurrentWithCompletionHandler:^(NEHotspotNetwork * _Nullable currentNetwork) {
-                NSLog(@"[NetworkState] NEHotspotNetwork result: %@, SSID: %@, BSSID: %@", 
-                      currentNetwork, currentNetwork.SSID, currentNetwork.BSSID);
-                
                 NetworkDetails *strongSelf = weakSelf;
                 if (!strongSelf) {
                     if (completion) completion();
@@ -100,7 +97,7 @@
             }];
         } @catch (NSException *exception) {
             // Fail gracefully - entitlements or permissions may be missing
-            NSLog(@"NetworkDetails updateWifiInfo error: %@", exception.reason);
+            NSLog(@"NetworkStateManager updateWifiInfo error: %@", exception.reason);
             _ssid = nil;
             _bssid = nil;
             if (completion) completion();
