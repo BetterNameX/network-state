@@ -217,9 +217,9 @@ data class NetworkState(
 data class NetworkDetails(
     var ssid: String? = null,
     var bssid: String? = null,
-    var strength: Int = -1,
-    var frequency: Int = -1,
-    var linkSpeed: Int = -1,
+    var strength: Int? = null,
+    var frequency: Int? = null,
+    var linkSpeed: Int? = null,
     var capabilities: NetworkCapabilitiesInfo = NetworkCapabilitiesInfo()
 )
 

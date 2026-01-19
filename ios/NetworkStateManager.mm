@@ -51,9 +51,9 @@
     if (self = [super init]) {
         _ssid = nil;
         _bssid = nil;
-        _strength = -1;
-        _frequency = -1;
-        _linkSpeed = -1;
+        _strength = nil;
+        _frequency = nil;
+        _linkSpeed = nil;
     }
     return self;
 }
@@ -109,16 +109,22 @@
 
 - (NSDictionary *)toDictionary {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
-    // Only include ssid/bssid if they have values (match Android behaviour)
+    // Only include values when they're available
     if (_ssid != nil) {
         result[@"ssid"] = _ssid;
     }
     if (_bssid != nil) {
         result[@"bssid"] = _bssid;
     }
-    result[@"strength"] = @(_strength);
-    result[@"frequency"] = @(_frequency);
-    result[@"linkSpeed"] = @(_linkSpeed);
+    if (_strength != nil) {
+        result[@"strength"] = _strength;
+    }
+    if (_frequency != nil) {
+        result[@"frequency"] = _frequency;
+    }
+    if (_linkSpeed != nil) {
+        result[@"linkSpeed"] = _linkSpeed;
+    }
     return result;
 }
 

@@ -43,9 +43,9 @@ class NetworkStateModule(reactContext: ReactApplicationContext) :
             val detailsMap = Arguments.createMap().apply {
               details.ssid?.let { putString("ssid", it) }
               details.bssid?.let { putString("bssid", it) }
-              putInt("strength", details.strength)
-              putInt("frequency", details.frequency)
-              putInt("linkSpeed", details.linkSpeed)
+              details.strength?.let { putInt("strength", it) }
+              details.frequency?.let { putInt("frequency", it) }
+              details.linkSpeed?.let { putInt("linkSpeed", it) }
               
               val capabilitiesMap = Arguments.createMap().apply {
                 putBoolean("hasTransportWifi", details.capabilities.hasTransportWifi)
@@ -93,9 +93,9 @@ class NetworkStateModule(reactContext: ReactApplicationContext) :
             val detailsMap = Arguments.createMap().apply {
               details.ssid?.let { putString("ssid", it) }
               details.bssid?.let { putString("bssid", it) }
-              putInt("strength", details.strength)
-              putInt("frequency", details.frequency)
-              putInt("linkSpeed", details.linkSpeed)
+              details.strength?.let { putInt("strength", it) }
+              details.frequency?.let { putInt("frequency", it) }
+              details.linkSpeed?.let { putInt("linkSpeed", it) }
               
               val capabilitiesMap = Arguments.createMap().apply {
                 putBoolean("hasTransportWifi", details.capabilities.hasTransportWifi)
