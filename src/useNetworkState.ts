@@ -134,6 +134,7 @@ export function useNetworkState(
   const subscriptionRef = useRef<{
     remove: () => void;
   } | null>(null);
+  const isListeningRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -145,44 +146,52 @@ export function useNetworkState(
   }, []);
 
   const startListening = useCallback(() => {
-    if (!isListening) {
-      NativeNetworkState.startNetworkStateListener();
-      setIsListening(true);
+    // Prevent multiple subscriptions using ref (avoids race condition with state updates)
+    if (isListeningRef.current) return;
 
-      // Listen to network state changes
-      const emitter =
-        Platform.OS === 'ios'
-          ? new NativeEventEmitter((NativeModules as any).NetworkState)
-          : DeviceEventEmitter;
-      const subscription = (emitter as any).addListener(
-        'networkStateChanged',
-        (state: any) => {
-          setNetworkStateData(state as NetworkStateType);
-        }
-      );
+    // Clean up existing subscription if any (safety check)
+    subscriptionRef.current?.remove?.();
+    subscriptionRef.current = null;
 
-      // Store subscription for cleanup in closure
-      subscriptionRef.current = subscription as unknown as {
-        remove: () => void;
-      };
-    }
-  }, [isListening]);
+    isListeningRef.current = true;
+    NativeNetworkState.startNetworkStateListener();
+    setIsListening(true);
+
+    // Listen to network state changes
+    const emitter =
+      Platform.OS === 'ios'
+        ? new NativeEventEmitter((NativeModules as any).NetworkState)
+        : DeviceEventEmitter;
+    const subscription = (emitter as any).addListener(
+      'networkStateChanged',
+      (state: any) => {
+        setNetworkStateData(state as NetworkStateType);
+      }
+    );
+
+    // Store subscription for cleanup in closure
+    subscriptionRef.current = subscription as unknown as {
+      remove: () => void;
+    };
+  }, []);
 
   const stopListening = useCallback(() => {
-    if (isListening) {
-      NativeNetworkState.stopNetworkStateListener();
-      setIsListening(false);
+    if (!isListeningRef.current) return;
 
-      // Remove subscription
-      subscriptionRef.current?.remove?.();
-      subscriptionRef.current = null;
-    }
-  }, [isListening]);
+    isListeningRef.current = false;
+    NativeNetworkState.stopNetworkStateListener();
+    setIsListening(false);
+
+    // Remove subscription
+    subscriptionRef.current?.remove?.();
+    subscriptionRef.current = null;
+  }, []);
 
   // Handle app state changes (background/foreground)
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active' && isListening) {
+      // Use ref instead of state to avoid race condition with batched async updates
+      if (nextAppState === 'active' && isListeningRef.current) {
         // App came to foreground, force refresh network state
         NativeNetworkState.forceRefresh();
         // Also refresh local state
@@ -198,7 +207,7 @@ export function useNetworkState(
     return () => {
       subscription?.remove();
     };
-  }, [isListening, refresh]);
+  }, [refresh]);
 
   useEffect(() => {
     if (autoStart) {
@@ -209,11 +218,12 @@ export function useNetworkState(
     refresh();
 
     return () => {
-      if (isListening) {
+      if (isListeningRef.current) {
         stopListening();
       }
     };
-  }, [autoStart, startListening, stopListening, refresh, isListening]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   return {
     networkState: networkStateData,

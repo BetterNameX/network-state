@@ -38,7 +38,7 @@ Autolinking handles configuration.
 - ✅ Supports both Old Architecture and New Architecture (TurboModules)
 
 #### iOS  
-- ✅ Frameworks are automatically linked
+- ✅ Frameworks are automatically linked (`Network.framework`)
 - ✅ Requires iOS 12.0+
 - ✅ Supports both Old Architecture and New Architecture (TurboModules/Fabric)
 
@@ -50,20 +50,6 @@ To access WiFi network name (SSID) and BSSID on iOS 14+, your app needs:
 2. **Location permission**: Request location authorisation with **precise location** enabled
 
 Without these, `getWifiDetails()` will return `null` for SSID/BSSID on iOS (other fields like network type still work).
-
-### Permissions
-
-#### Android (Auto-added)
-```xml
-<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-<uses-permission android:name="android.permission.INTERNET" />
-```
-
-#### iOS (Auto-linked)
-- `Network.framework` - For NWPathMonitor and network state detection
-- `NetworkExtension.framework` - For WiFi SSID/BSSID access (iOS 14+)
 
 ## 📖 Usage
 
@@ -214,9 +200,23 @@ const state = await networkState.getNetworkState();
 const wifiConnected = await networkState.isConnectedToWifi();
 const cellularConnected = await networkState.isConnectedToCellular();
 
+// Check network availability and properties
+const wifiAvailable = await networkState.isNetworkTypeAvailable(NetworkType.WIFI);
+const strength = await networkState.getNetworkStrength();
+const isExpensive = await networkState.isNetworkExpensive();
+const isMetered = await networkState.isNetworkMetered();
+const isReachable = await networkState.isInternetReachable();
+
+// Get detailed information
+const wifiDetails = await networkState.getWifiDetails();
+const capabilities = await networkState.getNetworkCapabilities();
+
 // Start/stop listening
 networkState.startListening();
 networkState.stopListening();
+
+// Force refresh (useful when app comes to foreground)
+networkState.forceRefresh();
 ```
 
 ## 🔧 API Reference
@@ -240,6 +240,9 @@ const {
   getWifiDetails,        // Get WiFi details
   getNetworkCapabilities // Get network capabilities
 } = useNetworkState(options);
+
+// Note: forceRefresh() is automatically called when app returns to foreground
+// No need to call it manually in most cases
 ```
 
 ### NetworkState Interface
@@ -295,6 +298,7 @@ enum NetworkType {
 - **useNetworkState hook**: Android & iOS
 - **getNetworkState()**: Android & iOS
 - **start/stop listening**: Android & iOS
+- **refresh()**: Android & iOS (manually refresh network state)
 - **isConnected**: Android & iOS
   - Android: Has `NET_CAPABILITY_INTERNET` (network claims internet access)
   - iOS: Has network interfaces (WiFi/Cellular/Ethernet/Other)
@@ -308,6 +312,7 @@ enum NetworkType {
 - **isConnectedToWifi()/isConnectedToCellular()**: Android & iOS
 - **getWifiDetails()**: Android & iOS 14+ (iOS requires entitlement + location permission; see iOS setup)
 - **getNetworkCapabilities()**: Android & iOS (fields coverage varies)
+- **forceRefresh()**: Android & iOS (automatically called on foreground, can be called manually)
 
 ## 🧪 Example
 

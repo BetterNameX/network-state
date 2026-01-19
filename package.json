@@ -1,6 +1,6 @@
 {
   "name": "@bear-block/network-state",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "description": "Modern network state for React Native using Android 10+ NetworkCapabilities and iOS 12+ NWPathMonitor, with real-time updates and TypeScript support.",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
