@@ -126,15 +126,16 @@ class NetworkStateManager(private val context: Context) {
 
         val details = NetworkDetails()
 
-        if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-            val wifiInfo = try { wifiManager.connectionInfo } catch (_: Exception) { null }
-            wifiInfo?.let { info ->
-                details.ssid = info.ssid?.removeSurrounding("\"")
-                details.bssid = info.bssid
-                details.strength = info.rssi
-                details.frequency = info.frequency
-                details.linkSpeed = info.linkSpeed
-            }
+        // Always try to get WiFi info from WifiManager if WiFi is physically connected.
+        // This works regardless of VPN status, as WifiManager queries the hardware directly.
+        // The networkId check ensures we're actually connected to a WiFi network.
+        val wifiInfo = try { wifiManager.connectionInfo } catch (_: Exception) { null }
+        if (wifiInfo != null && wifiInfo.networkId != -1) {
+            details.ssid = wifiInfo.ssid?.removeSurrounding("\"")
+            details.bssid = wifiInfo.bssid
+            details.strength = wifiInfo.rssi
+            details.frequency = wifiInfo.frequency
+            details.linkSpeed = wifiInfo.linkSpeed
         }
 
         details.capabilities = NetworkCapabilitiesInfo(

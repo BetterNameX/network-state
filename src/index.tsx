@@ -98,12 +98,21 @@ export class ModernNetworkState {
     return state.isInternetReachable;
   }
 
-  /** Get WiFi details if connected (Android; iOS may return null) */
+  /**
+   * Get WiFi details if physically connected to WiFi.
+   * Works regardless of VPN status on Android, as it queries the WiFi hardware directly.
+   * Returns null if not connected to WiFi or if details are unavailable.
+   * Note: iOS does not expose SSID/BSSID due to privacy restrictions.
+   */
   async getWifiDetails(): Promise<NetworkDetails | null> {
     const state = await this.getNetworkState();
-    if (state.type === NetworkType.WIFI && state.details) {
+
+    // Return details if we have actual WiFi info (SSID present),
+    // regardless of the reported network type (handles VPN scenarios)
+    if (state.details?.ssid) {
       return state.details;
     }
+
     return null;
   }
 
