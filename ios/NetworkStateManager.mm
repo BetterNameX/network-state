@@ -2,6 +2,53 @@
 #import <Network/Network.h>
 #import <NetworkExtension/NetworkExtension.h>
 
+// MARK: - IPAddressInfo
+
+@implementation IPAddressInfo
+
+- (NSDictionary *)toDictionary {
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+    result[@"address"] = _address;
+    result[@"version"] = _version;
+    result[@"prefixLength"] = @(_prefixLength);
+    if (_scope != nil) {
+        result[@"scope"] = _scope;
+    }
+    return result;
+}
+
+@end
+
+// MARK: - NetworkInterfaceInfo
+
+@implementation NetworkInterfaceInfo
+
+- (instancetype)init {
+    if (self = [super init]) {
+        _addresses = [NSMutableArray array];
+        _isDefaultRoute = NO;
+    }
+    return self;
+}
+
+- (NSDictionary *)toDictionary {
+    NSMutableArray *addressesArray = [NSMutableArray array];
+    for (IPAddressInfo *addr in _addresses) {
+        [addressesArray addObject:[addr toDictionary]];
+    }
+    
+    return @{
+        @"name": _name,
+        @"type": _type,
+        @"addresses": addressesArray,
+        @"isDefaultRoute": @(_isDefaultRoute)
+    };
+}
+
+@end
+
+// MARK: - NetworkCapabilities
+
 /**
  * Lightweight capability model attached to NetworkStateModel
  */
@@ -368,6 +415,243 @@
         if (completion) {
             completion();
         }
+    }
+}
+
+/**
+ * Calculate prefix length from a sockaddr netmask
+ */
+- (NSInteger)prefixLengthFromNetmask:(struct sockaddr *)netmask {
+    if (netmask == NULL) return 0;
+    
+    NSInteger prefixLength = 0;
+    
+    if (netmask->sa_family == AF_INET) {
+        struct sockaddr_in *addr4 = (struct sockaddr_in *)netmask;
+        uint32_t mask = ntohl(addr4->sin_addr.s_addr);
+        while (mask & 0x80000000) {
+            prefixLength++;
+            mask <<= 1;
+        }
+    } else if (netmask->sa_family == AF_INET6) {
+        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)netmask;
+        for (int i = 0; i < 16; i++) {
+            uint8_t byte = addr6->sin6_addr.s6_addr[i];
+            while (byte & 0x80) {
+                prefixLength++;
+                byte <<= 1;
+            }
+            if (byte != 0) break;
+        }
+    }
+    
+    return prefixLength;
+}
+
+/**
+ * Determine IPv6 scope from address
+ */
+- (NSString *)ipv6ScopeFromAddress:(struct in6_addr *)addr6 {
+    if (IN6_IS_ADDR_LINKLOCAL(addr6)) {
+        return @"link-local";
+    } else if (IN6_IS_ADDR_SITELOCAL(addr6)) {
+        return @"site-local";
+    } else if (IN6_IS_ADDR_LOOPBACK(addr6)) {
+        return @"host";
+    } else {
+        return @"global";
+    }
+}
+
+/**
+ * Get interface info from NWPath - returns dictionary mapping interface name to type and active status.
+ * Uses NWPathMonitor's current path to determine actual interface types.
+ */
+- (NSDictionary<NSString *, NSDictionary *> *)getInterfaceInfoFromPath API_AVAILABLE(ios(12.0)) {
+    NSMutableDictionary<NSString *, NSDictionary *> *interfaceInfo = [NSMutableDictionary dictionary];
+    
+    // Create a temporary path monitor to get current path info
+    nw_path_monitor_t tempMonitor = nw_path_monitor_create();
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    
+    __block nw_path_t currentPath = NULL;
+    
+    dispatch_queue_t queue = dispatch_queue_create("com.bearblock.networkstate.pathquery", DISPATCH_QUEUE_SERIAL);
+    nw_path_monitor_set_queue(tempMonitor, queue);
+    nw_path_monitor_set_update_handler(tempMonitor, ^(nw_path_t path) {
+        currentPath = path;
+        dispatch_semaphore_signal(semaphore);
+    });
+    nw_path_monitor_start(tempMonitor);
+    
+    // Wait for path with timeout
+    dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC));
+    nw_path_monitor_cancel(tempMonitor);
+    
+    if (currentPath == NULL) {
+        return interfaceInfo;
+    }
+    
+    // Enumerate interfaces in the path to get their types
+    nw_path_enumerate_interfaces(currentPath, ^bool(nw_interface_t interface) {
+        const char *name = nw_interface_get_name(interface);
+        nw_interface_type_t type = nw_interface_get_type(interface);
+        
+        NSString *ifName = [NSString stringWithUTF8String:name];
+        NSString *ifType = @"ethernet";  // Default
+        
+        switch (type) {
+            case nw_interface_type_wifi:
+                ifType = @"wifi";
+                break;
+            case nw_interface_type_wired:
+                ifType = @"ethernet";
+                break;
+            case nw_interface_type_cellular:
+                ifType = @"cellular";
+                break;
+            case nw_interface_type_loopback:
+                ifType = @"loopback";
+                break;
+            default:
+                ifType = @"other";
+                break;
+        }
+        
+        // Interfaces enumerated by the path are the active/preferred ones
+        interfaceInfo[ifName] = @{
+            @"type": ifType,
+            @"isActive": @YES
+        };
+        
+        return true;  // Continue enumeration
+    });
+    
+    return interfaceInfo;
+}
+
+- (NSArray<NSDictionary *> *)getNetworkInterfaces {
+    @try {
+        NSMutableDictionary<NSString *, NetworkInterfaceInfo *> *interfaceMap = [NSMutableDictionary dictionary];
+        
+        // Get interface info from NWPath (type and active status)
+        NSDictionary<NSString *, NSDictionary *> *pathInterfaceInfo = [self getInterfaceInfoFromPath];
+        
+        // Find the first active WiFi or Ethernet interface as the default route
+        NSString *defaultRouteInterface = nil;
+        for (NSString *ifName in pathInterfaceInfo) {
+            NSDictionary *info = pathInterfaceInfo[ifName];
+            NSString *type = info[@"type"];
+            if ([type isEqualToString:@"wifi"] || [type isEqualToString:@"ethernet"]) {
+                defaultRouteInterface = ifName;
+                break;  // First one in the path is the preferred one
+            }
+        }
+        
+        struct ifaddrs *interfaces = NULL;
+        if (getifaddrs(&interfaces) != 0) {
+            return @[];
+        }
+        
+        for (struct ifaddrs *ifa = interfaces; ifa != NULL; ifa = ifa->ifa_next) {
+            if (ifa->ifa_addr == NULL) continue;
+            
+            NSString *ifName = [NSString stringWithUTF8String:ifa->ifa_name];
+            
+            // Filter: skip loopback (lo*), cellular (pdp_ip*), VPN (utun*, ipsec*)
+            if ([ifName hasPrefix:@"lo"] ||
+                [ifName hasPrefix:@"pdp_ip"] ||
+                [ifName hasPrefix:@"utun"] ||
+                [ifName hasPrefix:@"ipsec"] ||
+                [ifName hasPrefix:@"llw"] ||      // Low latency WLAN
+                [ifName hasPrefix:@"awdl"] ||     // Apple Wireless Direct Link
+                [ifName hasPrefix:@"ap"] ||       // Access Point
+                [ifName hasPrefix:@"bridge"]) {   // Bridge interfaces
+                continue;
+            }
+            
+            // Only process en* interfaces (WiFi/Ethernet)
+            if (![ifName hasPrefix:@"en"]) {
+                continue;
+            }
+            
+            // Skip interfaces that are not up
+            if ((ifa->ifa_flags & IFF_UP) == 0) {
+                continue;
+            }
+            
+            sa_family_t family = ifa->ifa_addr->sa_family;
+            
+            // Only process IPv4 and IPv6
+            if (family != AF_INET && family != AF_INET6) {
+                continue;
+            }
+            
+            // Get or create interface info
+            NetworkInterfaceInfo *ifInfo = interfaceMap[ifName];
+            if (ifInfo == nil) {
+                ifInfo = [[NetworkInterfaceInfo alloc] init];
+                ifInfo.name = ifName;
+                
+                // Use NWPath info if available, otherwise fall back to heuristics
+                NSDictionary *pathInfo = pathInterfaceInfo[ifName];
+                if (pathInfo) {
+                    ifInfo.type = pathInfo[@"type"];
+                } else {
+                    // Fallback: assume wifi for en0 on iOS, ethernet for others
+                    #if TARGET_OS_IOS || TARGET_OS_TV
+                    ifInfo.type = [ifName isEqualToString:@"en0"] ? @"wifi" : @"ethernet";
+                    #else
+                    ifInfo.type = @"ethernet";  // Conservative default for macOS
+                    #endif
+                }
+                
+                // Skip if type is cellular, loopback, or other
+                if (![ifInfo.type isEqualToString:@"wifi"] && ![ifInfo.type isEqualToString:@"ethernet"]) {
+                    continue;
+                }
+                
+                ifInfo.isDefaultRoute = [ifName isEqualToString:defaultRouteInterface];
+                interfaceMap[ifName] = ifInfo;
+            }
+            
+            // Extract IP address
+            IPAddressInfo *ipInfo = [[IPAddressInfo alloc] init];
+            char addressBuffer[INET6_ADDRSTRLEN];
+            
+            if (family == AF_INET) {
+                struct sockaddr_in *addr4 = (struct sockaddr_in *)ifa->ifa_addr;
+                inet_ntop(AF_INET, &addr4->sin_addr, addressBuffer, sizeof(addressBuffer));
+                ipInfo.address = [NSString stringWithUTF8String:addressBuffer];
+                ipInfo.version = @"ipv4";
+                ipInfo.prefixLength = [self prefixLengthFromNetmask:ifa->ifa_netmask];
+                ipInfo.scope = nil;
+            } else if (family == AF_INET6) {
+                struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+                inet_ntop(AF_INET6, &addr6->sin6_addr, addressBuffer, sizeof(addressBuffer));
+                ipInfo.address = [NSString stringWithUTF8String:addressBuffer];
+                ipInfo.version = @"ipv6";
+                ipInfo.prefixLength = [self prefixLengthFromNetmask:ifa->ifa_netmask];
+                ipInfo.scope = [self ipv6ScopeFromAddress:&addr6->sin6_addr];
+            }
+            
+            [ifInfo.addresses addObject:ipInfo];
+        }
+        
+        freeifaddrs(interfaces);
+        
+        // Convert to array of dictionaries
+        NSMutableArray *result = [NSMutableArray array];
+        for (NetworkInterfaceInfo *info in interfaceMap.allValues) {
+            if (info.addresses.count > 0) {
+                [result addObject:[info toDictionary]];
+            }
+        }
+        
+        return result;
+    } @catch (NSException *exception) {
+        NSLog(@"NetworkStateManager getNetworkInterfaces error: %@", exception.reason);
+        return @[];
     }
 }
 

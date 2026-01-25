@@ -188,6 +188,49 @@ function AdvancedComponent() {
 }
 ```
 
+### Getting Network Interfaces & IP Addresses
+
+For use cases like binding a local server or advertising your IP for peer discovery:
+
+```typescript
+import { useNetworkState, getNetworkInterfaces } from '@bear-block/network-state';
+
+// Option 1: Reactive (updates when network changes)
+function MyComponent() {
+  const { networkState } = useNetworkState({ 
+    autoStart: true,
+    includeIPAddresses: true  // Enable IP address tracking
+  });
+
+  useEffect(() => {
+    if (networkState?.interfaces) {
+      for (const iface of networkState.interfaces) {
+        console.log(`${iface.name} (${iface.type}, default: ${iface.isDefaultRoute})`);
+        for (const addr of iface.addresses) {
+          console.log(`  ${addr.address}/${addr.prefixLength} (${addr.version})`);
+        }
+      }
+    }
+  }, [networkState]);
+}
+
+// Option 2: Imperative (one-shot fetch)
+async function getMyIPAddress() {
+  const interfaces = await getNetworkInterfaces();
+  
+  // Find the preferred interface (default route)
+  const preferred = interfaces.find(i => i.isDefaultRoute) ?? interfaces[0];
+  
+  // Get the first IPv4 address
+  const ipv4 = preferred?.addresses.find(a => a.version === 'ipv4');
+  
+  console.log('Bind to:', ipv4?.address);  // e.g., "192.168.1.100"
+  return ipv4?.address;
+}
+```
+
+**Note**: Only WiFi and Ethernet interfaces are returned. Loopback, cellular, and VPN interfaces are filtered out.
+
 ### Direct API Usage
 
 ```typescript
@@ -211,6 +254,9 @@ const isReachable = await networkState.isInternetReachable();
 const wifiDetails = await networkState.getWifiDetails();
 const capabilities = await networkState.getNetworkCapabilities();
 
+// Get network interfaces with IP addresses
+const interfaces = await networkState.getNetworkInterfaces();
+
 // Start/stop listening
 networkState.startListening();
 networkState.stopListening();
@@ -225,7 +271,7 @@ networkState.forceRefresh();
 
 ```typescript
 const {
-  networkState,           // Current network state
+  networkState,           // Current network state (includes interfaces if enabled)
   isListening,           // Whether listening is active
   startListening,        // Start listening to changes
   stopListening,         // Stop listening to changes
@@ -238,8 +284,13 @@ const {
   isConnectedToCellular, // Check cellular connection
   isInternetReachable,   // Check internet reachability
   getWifiDetails,        // Get WiFi details
-  getNetworkCapabilities // Get network capabilities
+  getNetworkCapabilities, // Get network capabilities
+  getNetworkInterfaces   // Get network interfaces with IP addresses
 } = useNetworkState(options);
+
+// Options:
+// - autoStart: boolean (default: true) - Start listening on mount
+// - includeIPAddresses: boolean (default: false) - Include interfaces in networkState
 
 // Note: forceRefresh() is automatically called when app returns to foreground
 // No need to call it manually in most cases
@@ -274,6 +325,21 @@ interface NetworkDetails {
   frequency?: number;       // WiFi frequency in MHz (Android)
   linkSpeed?: number;       // WiFi link speed (Android)
   capabilities?: NetworkCapabilities; // Both; field coverage varies by platform
+}
+
+// Network interfaces (WiFi/Ethernet only, excludes loopback, cellular, VPN)
+interface NetworkInterface {
+  name: string;              // Interface name (e.g., "en0", "wlan0", "eth0")
+  type: 'wifi' | 'ethernet'; // Interface type
+  addresses: IPAddress[];    // All IP addresses assigned to this interface
+  isDefaultRoute: boolean;   // Whether this is the default route for outgoing traffic
+}
+
+interface IPAddress {
+  address: string;           // The IP address (e.g., "192.168.1.100" or "fe80::1")
+  version: 'ipv4' | 'ipv6';  // IP version
+  prefixLength: number;      // Prefix length (e.g., 24 for /24, 64 for /64)
+  scope?: string;            // For IPv6: "global", "link-local", "site-local", "host"
 }
 ```
 
@@ -312,6 +378,7 @@ enum NetworkType {
 - **isConnectedToWifi()/isConnectedToCellular()**: Android & iOS
 - **getWifiDetails()**: Android & iOS 14+ (iOS requires entitlement + location permission; see iOS setup)
 - **getNetworkCapabilities()**: Android & iOS (fields coverage varies)
+- **getNetworkInterfaces()**: Android & iOS (returns WiFi/Ethernet interfaces with IPv4/IPv6 addresses)
 - **forceRefresh()**: Android & iOS (automatically called on foreground, can be called manually)
 
 ## 🧪 Example

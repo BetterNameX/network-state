@@ -4,6 +4,8 @@ import type {
   NetworkState as NetworkStateType,
   NetworkDetails,
   NetworkCapabilities,
+  NetworkInterface,
+  IPAddress,
 } from './NativeNetworkState';
 import { useNetworkState } from './useNetworkState';
 
@@ -12,6 +14,8 @@ export type {
   NetworkState as NetworkStateType,
   NetworkDetails,
   NetworkCapabilities,
+  NetworkInterface,
+  IPAddress,
 };
 
 // Export enum values and hook
@@ -122,6 +126,15 @@ export class ModernNetworkState {
     return state.details?.capabilities || null;
   }
 
+  /**
+   * Get all network interfaces with their IP addresses.
+   * Returns WiFi and Ethernet interfaces only (excludes loopback, cellular, VPN).
+   * (Android & iOS)
+   */
+  async getNetworkInterfaces(): Promise<NetworkInterface[]> {
+    return await NetworkState.getNetworkInterfaces();
+  }
+
   /** Force refresh network state - useful when app comes to foreground (Android & iOS) */
   forceRefresh(): void {
     NetworkState.forceRefresh();
@@ -146,6 +159,7 @@ export const isInternetReachable = () => networkState.isInternetReachable();
 export const getWifiDetails = () => networkState.getWifiDetails();
 export const getNetworkCapabilities = () =>
   networkState.getNetworkCapabilities();
+export const getNetworkInterfaces = () => networkState.getNetworkInterfaces();
 export const forceRefresh = () => networkState.forceRefresh();
 
 // Default export

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -7,10 +7,19 @@ import {
   TouchableOpacity,
   Alert,
   AppState,
+  Switch,
 } from 'react-native';
-import { useNetworkState, NetworkType, networkState } from '../../src';
+import {
+  useNetworkState,
+  NetworkType,
+  networkState,
+  getNetworkInterfaces,
+} from '../../src';
+import type { NetworkInterface } from '../../src';
 
 export default function App() {
+  const [includeIPAddresses, setIncludeIPAddresses] = useState(false);
+
   const {
     networkState: currentNetworkState,
     isListening,
@@ -26,17 +35,20 @@ export default function App() {
     isInternetReachable,
     getWifiDetails,
     getNetworkCapabilities,
-  } = useNetworkState({ autoStart: true });
+  } = useNetworkState({ autoStart: true, includeIPAddresses });
 
   const [testResults, setTestResults] = useState<string[]>([]);
   const [appState, setAppState] = useState(AppState.currentState);
+  const [manualInterfaces, setManualInterfaces] = useState<
+    NetworkInterface[] | null
+  >(null);
 
-  const addTestResult = (result: string) => {
+  const addTestResult = useCallback((result: string) => {
     setTestResults((prev) => [
       ...prev,
       `${new Date().toLocaleTimeString()}: ${result}`,
     ]);
-  };
+  }, []);
 
   // Monitor app state changes for background/foreground testing
   useEffect(() => {
@@ -54,7 +66,7 @@ export default function App() {
       handleAppStateChange
     );
     return () => subscription?.remove();
-  }, []);
+  }, [addTestResult]);
 
   const runTests = async () => {
     setTestResults([]);
@@ -126,6 +138,26 @@ export default function App() {
     }
   };
 
+  const fetchNetworkInterfaces = useCallback(async () => {
+    try {
+      const interfaces = await getNetworkInterfaces();
+      setManualInterfaces(interfaces);
+      addTestResult(`Fetched ${interfaces.length} interface(s)`);
+      for (const iface of interfaces) {
+        addTestResult(
+          `  ${iface.name} (${iface.type}) - default: ${iface.isDefaultRoute}`
+        );
+        for (const addr of iface.addresses) {
+          addTestResult(
+            `    ${addr.address}/${addr.prefixLength} (${addr.version}${addr.scope ? `, ${addr.scope}` : ''})`
+          );
+        }
+      }
+    } catch (error) {
+      addTestResult(`Error fetching interfaces: ${error}`);
+    }
+  }, [addTestResult]);
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView}>
@@ -188,6 +220,37 @@ export default function App() {
                   )}
                 </View>
               )}
+
+              {currentNetworkState.interfaces &&
+                currentNetworkState.interfaces.length > 0 && (
+                  <View style={styles.detailsSection}>
+                    <Text style={styles.detailsTitle}>
+                      Network Interfaces (Reactive):
+                    </Text>
+                    {currentNetworkState.interfaces.map((iface, idx) => (
+                      <View key={idx} style={styles.interfaceBlock}>
+                        <Text style={styles.interfaceName}>
+                          {iface.name} ({iface.type})
+                          {iface.isDefaultRoute && (
+                            <Text style={styles.defaultBadge}> [DEFAULT]</Text>
+                          )}
+                        </Text>
+                        {iface.addresses.map((addr, addrIdx) => (
+                          <Text key={addrIdx} style={styles.addressText}>
+                            {addr.version === 'ipv4' ? '  IPv4: ' : '  IPv6: '}
+                            {addr.address}/{addr.prefixLength}
+                            {addr.scope && (
+                              <Text style={styles.scopeText}>
+                                {' '}
+                                ({addr.scope})
+                              </Text>
+                            )}
+                          </Text>
+                        ))}
+                      </View>
+                    ))}
+                  </View>
+                )}
             </View>
           ) : (
             <Text style={styles.loadingText}>Loading network state...</Text>
@@ -196,6 +259,15 @@ export default function App() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Controls</Text>
+
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Include IP Addresses:</Text>
+            <Switch
+              value={includeIPAddresses}
+              onValueChange={setIncludeIPAddresses}
+            />
+          </View>
+
           <View style={styles.buttonRow}>
             <TouchableOpacity
               style={[
@@ -223,7 +295,45 @@ export default function App() {
               <Text style={styles.buttonText}>Test Direct API</Text>
             </TouchableOpacity>
           </View>
+
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={[styles.button, styles.buttonSecondary]}
+              onPress={fetchNetworkInterfaces}
+            >
+              <Text style={styles.buttonText}>
+                Fetch Interfaces (Imperative)
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {manualInterfaces && manualInterfaces.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Network Interfaces (Manual Fetch)
+            </Text>
+            {manualInterfaces.map((iface, idx) => (
+              <View key={idx} style={styles.interfaceBlock}>
+                <Text style={styles.interfaceName}>
+                  {iface.name} ({iface.type})
+                  {iface.isDefaultRoute && (
+                    <Text style={styles.defaultBadge}> [DEFAULT]</Text>
+                  )}
+                </Text>
+                {iface.addresses.map((addr, addrIdx) => (
+                  <Text key={addrIdx} style={styles.addressText}>
+                    {addr.version === 'ipv4' ? '  IPv4: ' : '  IPv6: '}
+                    {addr.address}/{addr.prefixLength}
+                    {addr.scope && (
+                      <Text style={styles.scopeText}> ({addr.scope})</Text>
+                    )}
+                  </Text>
+                ))}
+              </View>
+            ))}
+          </View>
+        )}
 
         {testResults.length > 0 && (
           <View style={styles.section}>
@@ -388,5 +498,44 @@ const styles = {
     fontSize: 14,
     color: '#555',
     marginBottom: 4,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingVertical: 8,
+  },
+  switchLabel: {
+    fontSize: 14,
+    color: '#555',
+  },
+  buttonSecondary: {
+    backgroundColor: '#5856D6',
+  },
+  interfaceBlock: {
+    marginBottom: 12,
+    paddingLeft: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#007AFF',
+  },
+  interfaceName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  defaultBadge: {
+    color: '#34C759',
+    fontWeight: '700',
+  },
+  addressText: {
+    fontSize: 13,
+    color: '#555',
+    fontFamily: 'monospace',
+  },
+  scopeText: {
+    color: '#8E8E93',
+    fontStyle: 'italic',
   },
 } as const;

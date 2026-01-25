@@ -177,6 +177,40 @@ class NetworkStateModule(reactContext: ReactApplicationContext) :
     networkStateManager.forceRefresh()
   }
 
+  override fun getNetworkInterfaces(promise: Promise) {
+    scope.launch(Dispatchers.IO) {
+      try {
+        val interfaces = networkStateManager.getNetworkInterfaces()
+        val result = Arguments.createArray()
+
+        for (iface in interfaces) {
+          val ifaceMap = Arguments.createMap().apply {
+            putString("name", iface.name)
+            putString("type", iface.type)
+            putBoolean("isDefaultRoute", iface.isDefaultRoute)
+
+            val addressesArray = Arguments.createArray()
+            for (addr in iface.addresses) {
+              val addrMap = Arguments.createMap().apply {
+                putString("address", addr.address)
+                putString("version", addr.version)
+                putInt("prefixLength", addr.prefixLength)
+                addr.scope?.let { putString("scope", it) }
+              }
+              addressesArray.pushMap(addrMap)
+            }
+            putArray("addresses", addressesArray)
+          }
+          result.pushMap(ifaceMap)
+        }
+
+        promise.resolve(result)
+      } catch (e: Exception) {
+        promise.reject("NETWORK_INTERFACES_ERROR", e.message, e)
+      }
+    }
+  }
+
   override fun onCatalystInstanceDestroy() {
     super.onCatalystInstanceDestroy()
     networkStateManager.stopListening()

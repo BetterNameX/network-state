@@ -1,7 +1,34 @@
 #import <Foundation/Foundation.h>
 #import <SystemConfiguration/SystemConfiguration.h>
+#import <ifaddrs.h>
+#import <arpa/inet.h>
+#import <net/if.h>
 
 NS_ASSUME_NONNULL_BEGIN
+
+/**
+ * Represents an IP address with metadata
+ */
+@interface IPAddressInfo : NSObject
+@property (nonatomic, strong) NSString *address;
+@property (nonatomic, strong) NSString *version;  // "ipv4" or "ipv6"
+@property (nonatomic, assign) NSInteger prefixLength;
+@property (nonatomic, strong, nullable) NSString *scope;  // For IPv6: "global", "link-local", etc.
+
+- (NSDictionary *)toDictionary;
+@end
+
+/**
+ * Represents a network interface (WiFi, Ethernet)
+ */
+@interface NetworkInterfaceInfo : NSObject
+@property (nonatomic, strong) NSString *name;
+@property (nonatomic, strong) NSString *type;  // "wifi" or "ethernet"
+@property (nonatomic, strong) NSMutableArray<IPAddressInfo *> *addresses;
+@property (nonatomic, assign) BOOL isDefaultRoute;
+
+- (NSDictionary *)toDictionary;
+@end
 
 @protocol NetworkStateListener <NSObject>
 - (void)onNetworkStateChanged:(id)networkState;
@@ -63,6 +90,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)isNetworkMetered;
 - (void)forceRefresh;
 - (void)refreshWifiInfoWithCompletion:(void (^)(void))completion;
+- (NSArray<NSDictionary *> *)getNetworkInterfaces;
 
 @end
 

@@ -1,6 +1,45 @@
 import { TurboModuleRegistry, type TurboModule } from 'react-native';
 
 /**
+ * Represents an IP address with metadata
+ * Platform: Android & iOS
+ */
+export interface IPAddress {
+  /** The IP address (e.g., "192.168.1.100" or "fe80::1") */
+  address: string;
+
+  /** IP version */
+  version: 'ipv4' | 'ipv6';
+
+  /** Prefix length (e.g., 24 for /24, 64 for /64) */
+  prefixLength: number;
+
+  /** For IPv6: address scope */
+  scope?: 'global' | 'link-local' | 'site-local' | 'host' | 'other';
+}
+
+/**
+ * Represents a network interface (WiFi, Ethernet)
+ * Platform: Android & iOS
+ */
+export interface NetworkInterface {
+  /** Interface name (e.g., "en0", "wlan0", "eth0") */
+  name: string;
+
+  /** Interface type */
+  type: 'wifi' | 'ethernet';
+
+  /** All IP addresses assigned to this interface */
+  addresses: IPAddress[];
+
+  /**
+   * Whether this interface is the default route for outgoing traffic.
+   * Useful hint for choosing which IP to advertise/bind to.
+   */
+  isDefaultRoute: boolean;
+}
+
+/**
  * Network state information
  * Platform: Android & iOS
  */
@@ -32,6 +71,13 @@ export interface NetworkState {
 
   /** Additional network details (signal strength, capabilities, etc.) */
   details?: NetworkDetails;
+
+  /**
+   * Network interfaces with IP addresses.
+   * Only populated when explicitly requested via includeIPAddresses option.
+   * Includes WiFi and Ethernet interfaces only (excludes loopback, cellular, VPN).
+   */
+  interfaces?: NetworkInterface[];
 }
 
 /**
@@ -115,6 +161,13 @@ export interface Spec extends TurboModule {
 
   /** Force refresh current network state (Android & iOS) */
   forceRefresh(): void;
+
+  /**
+   * Get network interfaces with IP addresses.
+   * Returns WiFi and Ethernet interfaces only (excludes loopback, cellular, VPN).
+   * (Android & iOS)
+   */
+  getNetworkInterfaces(): Promise<NetworkInterface[]>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('NetworkState');

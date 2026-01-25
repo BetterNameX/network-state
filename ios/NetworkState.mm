@@ -132,6 +132,16 @@ RCT_EXPORT_METHOD(forceRefresh) {
     [self.networkStateManager forceRefresh];
 }
 
+RCT_EXPORT_METHOD(getNetworkInterfaces:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject) {
+    @try {
+        NSArray<NSDictionary *> *interfaces = [self.networkStateManager getNetworkInterfaces];
+        resolve(interfaces);
+    } @catch (NSException *exception) {
+        reject(@"NETWORK_INTERFACES_ERROR", exception.reason, nil);
+    }
+}
+
 // MARK: - TurboModule Support
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:

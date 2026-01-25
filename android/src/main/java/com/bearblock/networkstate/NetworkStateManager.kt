@@ -10,6 +10,8 @@ import android.os.Build
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.net.Inet4Address
+import java.net.Inet6Address
 
 class NetworkStateManager(private val context: Context) {
 
@@ -202,6 +204,90 @@ class NetworkStateManager(private val context: Context) {
     fun forceRefresh() {
         updateNetworkState()
     }
+
+    /**
+     * Get all network interfaces with their IP addresses.
+     * Returns WiFi and Ethernet interfaces only (excludes loopback, cellular, VPN).
+     */
+    fun getNetworkInterfaces(): List<NetworkInterfaceInfo> {
+        val results = mutableMapOf<String, NetworkInterfaceInfo>()
+
+        try {
+            val activeNetwork = connectivityManager.activeNetwork
+            val allNetworks = try {
+                connectivityManager.allNetworks
+            } catch (e: SecurityException) {
+                // Some OEM Android builds may restrict access
+                emptyArray()
+            }
+
+            for (network in allNetworks) {
+                try {
+                    val caps = connectivityManager.getNetworkCapabilities(network) ?: continue
+                    val linkProps = connectivityManager.getLinkProperties(network) ?: continue
+
+                    // Filter: only WiFi and Ethernet (skip cellular, VPN, Bluetooth, etc.)
+                    val isWifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                    val isEthernet = caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                    if (!isWifi && !isEthernet) continue
+
+                    val interfaceName = linkProps.interfaceName ?: continue
+                    val interfaceType = if (isWifi) "wifi" else "ethernet"
+                    val isDefaultRoute = network == activeNetwork
+
+                    val addresses = linkProps.linkAddresses.mapNotNull { linkAddr ->
+                        val inetAddr = linkAddr.address
+
+                        // Skip loopback addresses
+                        if (inetAddr.isLoopbackAddress) return@mapNotNull null
+
+                        // Get address string; strip zone ID suffix for consistency with iOS
+                        val rawAddress = inetAddr.hostAddress ?: return@mapNotNull null
+                        val addressString = rawAddress.substringBefore('%')
+
+                        val version = when (inetAddr) {
+                            is Inet4Address -> "ipv4"
+                            is Inet6Address -> "ipv6"
+                            else -> return@mapNotNull null
+                        }
+
+                        val scope = if (inetAddr is Inet6Address) {
+                            when {
+                                inetAddr.isLinkLocalAddress -> "link-local"
+                                inetAddr.isSiteLocalAddress -> "site-local"
+                                inetAddr.isLoopbackAddress -> "host"
+                                else -> "global"
+                            }
+                        } else null
+
+                        IPAddressInfo(
+                            address = addressString,
+                            version = version,
+                            prefixLength = linkAddr.prefixLength,
+                            scope = scope
+                        )
+                    }
+
+                    if (addresses.isNotEmpty()) {
+                        results[interfaceName] = NetworkInterfaceInfo(
+                            name = interfaceName,
+                            type = interfaceType,
+                            addresses = addresses,
+                            isDefaultRoute = isDefaultRoute
+                        )
+                    }
+                } catch (e: Exception) {
+                    // Skip this network if we can't get its properties
+                    continue
+                }
+            }
+        } catch (e: Exception) {
+            // Return empty list on any unexpected error
+            return emptyList()
+        }
+
+        return results.values.toList()
+    }
 }
 
 // Data classes for network state
@@ -237,4 +323,24 @@ data class NetworkCapabilitiesInfo(
     val hasCapabilityNotMetered: Boolean = false,
     val hasCapabilityNotRoaming: Boolean = false,
     val hasCapabilityNotSuspended: Boolean = false
+)
+
+/**
+ * Represents an IP address with metadata
+ */
+data class IPAddressInfo(
+    val address: String,
+    val version: String,  // "ipv4" or "ipv6"
+    val prefixLength: Int,
+    val scope: String? = null  // For IPv6: "global", "link-local", "site-local", "host"
+)
+
+/**
+ * Represents a network interface (WiFi, Ethernet)
+ */
+data class NetworkInterfaceInfo(
+    val name: String,
+    val type: String,  // "wifi" or "ethernet"
+    val addresses: List<IPAddressInfo>,
+    val isDefaultRoute: Boolean
 )

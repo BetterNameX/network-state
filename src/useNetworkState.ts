@@ -12,6 +12,7 @@ import type {
   NetworkState as NetworkStateType,
   NetworkDetails,
   NetworkCapabilities,
+  NetworkInterface,
 } from './NativeNetworkState';
 
 export interface UseNetworkStateOptions {
@@ -20,6 +21,14 @@ export interface UseNetworkStateOptions {
    * @default true
    */
   autoStart?: boolean;
+
+  /**
+   * Whether to include IP address information for network interfaces.
+   * When true, networkState.interfaces will be populated with WiFi/Ethernet
+   * interfaces and their IPv4/IPv6 addresses. Updates reactively on network changes.
+   * @default false
+   */
+  includeIPAddresses?: boolean;
 }
 
 export interface UseNetworkStateReturn {
@@ -94,6 +103,11 @@ export interface UseNetworkStateReturn {
    * Get network capabilities
    */
   getNetworkCapabilities: () => Promise<NetworkCapabilities | null>;
+
+  /**
+   * Get network interfaces with IP addresses (WiFi & Ethernet only)
+   */
+  getNetworkInterfaces: () => Promise<NetworkInterface[]>;
 }
 
 /**
@@ -126,7 +140,7 @@ export interface UseNetworkStateReturn {
 export function useNetworkState(
   options: UseNetworkStateOptions = {}
 ): UseNetworkStateReturn {
-  const { autoStart = true } = options;
+  const { autoStart = true, includeIPAddresses = false } = options;
 
   const [networkStateData, setNetworkStateData] =
     useState<NetworkStateType | null>(null);
@@ -139,11 +153,17 @@ export function useNetworkState(
   const refresh = useCallback(async () => {
     try {
       const state = await NativeNetworkState.getNetworkState();
-      setNetworkStateData(state);
+
+      if (includeIPAddresses) {
+        const interfaces = await NativeNetworkState.getNetworkInterfaces();
+        setNetworkStateData({ ...state, interfaces });
+      } else {
+        setNetworkStateData(state);
+      }
     } catch (error) {
       console.error('Failed to refresh network state:', error);
     }
-  }, []);
+  }, [includeIPAddresses]);
 
   const startListening = useCallback(() => {
     // Prevent multiple subscriptions using ref (avoids race condition with state updates)
@@ -164,8 +184,17 @@ export function useNetworkState(
         : DeviceEventEmitter;
     const subscription = (emitter as any).addListener(
       'networkStateChanged',
-      (state: any) => {
-        setNetworkStateData(state as NetworkStateType);
+      async (state: any) => {
+        if (includeIPAddresses) {
+          try {
+            const interfaces = await NativeNetworkState.getNetworkInterfaces();
+            setNetworkStateData({ ...(state as NetworkStateType), interfaces });
+          } catch {
+            setNetworkStateData(state as NetworkStateType);
+          }
+        } else {
+          setNetworkStateData(state as NetworkStateType);
+        }
       }
     );
 
@@ -173,7 +202,7 @@ export function useNetworkState(
     subscriptionRef.current = subscription as unknown as {
       remove: () => void;
     };
-  }, []);
+  }, [includeIPAddresses]);
 
   const stopListening = useCallback(() => {
     if (!isListeningRef.current) return;
@@ -208,6 +237,16 @@ export function useNetworkState(
       subscription?.remove();
     };
   }, [refresh]);
+
+  // Restart listener when includeIPAddresses changes (to update the event handler closure)
+  useEffect(() => {
+    if (isListeningRef.current) {
+      // Restart listener to pick up new includeIPAddresses value
+      stopListening();
+      startListening();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeIPAddresses]);
 
   useEffect(() => {
     if (autoStart) {
@@ -259,6 +298,7 @@ export function useNetworkState(
       const state = await NativeNetworkState.getNetworkState();
       return state.details?.capabilities || null;
     },
+    getNetworkInterfaces: () => NativeNetworkState.getNetworkInterfaces(),
   };
 }
 
